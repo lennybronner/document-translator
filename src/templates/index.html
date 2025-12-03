@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document Translator</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Document Translator</h1>
+        <p class="subtitle">Translate your documents while preserving formatting</p>
+
+        <div class="upload-section">
+            <form id="translateForm" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label for="file">Select Document:</label>
+                    <input type="file" id="file" name="file" accept=".doc,.docx,.pdf,.pptx" required>
+                    <small>Supported formats: .docx, .doc, .pdf, .pptx (max 16MB)</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="target_language">Target Language:</label>
+                    <select id="target_language" name="target_language" required>
+                        <option value="English" selected>English</option>
+                        <option value="Spanish">Spanish</option>
+                        <option value="French">French</option>
+                        <option value="German">German</option>
+                        <option value="Italian">Italian</option>
+                        <option value="Portuguese">Portuguese</option>
+                        <option value="Chinese">Chinese</option>
+                        <option value="Japanese">Japanese</option>
+                        <option value="Korean">Korean</option>
+                        <option value="Arabic">Arabic</option>
+                        <option value="Russian">Russian</option>
+                        <option value="Hindi">Hindi</option>
+                    </select>
+                </div>
+
+                <button type="submit" class="btn-primary" id="submitBtn">
+                    Translate Document
+                </button>
+            </form>
+
+            <div id="status" class="status hidden"></div>
+            <div id="progress" class="progress hidden">
+                <div class="progress-bar"></div>
+                <p class="progress-text">Translating your document...</p>
+            </div>
+        </div>
+
+        <div class="info-section">
+            <h2>Features</h2>
+            <ul>
+                <li><strong>Format Preservation:</strong> Maintains fonts, styles, paragraph formatting, and document structure</li>
+                <li><strong>Context-Aware Translation:</strong> Ensures consistent translation throughout the document by maintaining context</li>
+                <li><strong>Multiple Languages:</strong> Supports translation to/from Spanish, French, German, Chinese, Japanese, and more</li>
+                <li><strong>Powered by GenAI:</strong> Uses advanced AI for high-quality translations</li>
+            </ul>
+
+            <h2>What's Supported</h2>
+            <ul>
+                <li><strong>DOCX Files:</strong> Full support with comprehensive formatting preservation including bullet points, numbered lists, tables, and paragraph formatting</li>
+                <li><strong>PDF Files:</strong> Basic support (text extraction only, formatting may be lost)</li>
+            </ul>
+
+            <h2>Known Limitations</h2>
+            <ul>
+                <li><strong>Text boxes and shapes:</strong> Not translated</li>
+                <li><strong>Table of Contents:</strong> Will need to be regenerated in Word after translation</li>
+                <li><strong>Inline formatting:</strong> Bold/italic within paragraphs not preserved (uniform formatting per paragraph)</li>
+                <li><strong>Headers/Footers:</strong> May not be fully preserved</li>
+            </ul>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
