@@ -2,6 +2,9 @@ from docx import Document
 from docx.shared import Pt, RGBColor
 from copy import deepcopy
 from .base import BaseTranslator
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class DocxTranslator(BaseTranslator):
@@ -18,67 +21,99 @@ class DocxTranslator(BaseTranslator):
         # Copy numbering definitions for bullets and numbered lists
         self._copy_numbering_definitions(doc, new_doc)
 
-        print(f"Translating document to {target_language}...")
+        logger.info(f"Starting DOCX translation to {target_language}")
+        logger.info(f"Using model: {self.provider}/{self.model}")
 
-        # Batch translate paragraphs
-        BATCH_SIZE = 10
-        paragraphs = doc.paragraphs
-        total_paragraphs = len(paragraphs)
+        if self.progress_callback:
+            self.progress_callback(5, "Preparing document...")
 
+        # Process document body elements in order (paragraphs and tables interleaved)
+        body_elements = []
+        for element in doc.element.body:
+            if element.tag.endswith('p'):  # Paragraph
+                # Find the corresponding Paragraph object
+                for para in doc.paragraphs:
+                    if para._element == element:
+                        body_elements.append(('paragraph', para))
+                        break
+            elif element.tag.endswith('tbl'):  # Table
+                # Find the corresponding Table object
+                for table in doc.tables:
+                    if table._element == element:
+                        body_elements.append(('table', table))
+                        break
+
+        total_elements = len(body_elements)
+        BATCH_SIZE = 20
+
+        # Batch paragraphs, but process tables immediately when encountered
         i = 0
-        while i < total_paragraphs:
-            # Collect batch of paragraphs (including empty ones for order preservation)
+        while i < total_elements:
+            # Collect batch of consecutive paragraphs
             batch_paragraphs = []
-            batch_info = []  # Store (index, text, is_empty)
+            batch_elements = []  # Store (element_type, element, text, is_empty)
 
-            for j in range(i, min(i + BATCH_SIZE, total_paragraphs)):
-                text = paragraphs[j].text
-                if text.strip():
-                    batch_paragraphs.append(text)
-                    batch_info.append((j, text, False))
-                else:
-                    batch_info.append((j, "", True))
+            batch_end = min(i + BATCH_SIZE, total_elements)
+            for j in range(i, batch_end):
+                elem_type, elem = body_elements[j]
 
-            # Translate batch
-            if batch_paragraphs:
-                print(f"Translating paragraphs {i+1}-{min(i + BATCH_SIZE, total_paragraphs)}/{total_paragraphs}...")
-                translations = self.translate_batch(batch_paragraphs, target_language)
-
-                # Create translation lookup
-                translation_iter = iter(translations)
-
-                # Apply translations in correct order
-                for para_idx, text, is_empty in batch_info:
-                    if is_empty:
-                        # Add empty paragraph
-                        new_doc.add_paragraph()
+                if elem_type == 'paragraph':
+                    text = elem.text
+                    if text.strip():
+                        batch_paragraphs.append(text)
+                        batch_elements.append(('paragraph', elem, text, False))
                     else:
-                        # Add translated paragraph with formatting
-                        translated_text = next(translation_iter)
-                        new_paragraph = new_doc.add_paragraph()
-                        self._copy_paragraph_format(paragraphs[para_idx], new_paragraph, translated_text)
-            else:
-                # All paragraphs in this batch are empty
-                for para_idx, text, is_empty in batch_info:
-                    new_doc.add_paragraph()
+                        batch_elements.append(('paragraph', elem, "", True))
+                elif elem_type == 'table':
+                    # Stop batching when we hit a table
+                    batch_end = j
+                    break
 
-            i += BATCH_SIZE
+            # Translate and add batched paragraphs BEFORE checking for table
+            if batch_elements:  # Changed from batch_paragraphs to batch_elements
+                if batch_paragraphs:  # Only translate if there are non-empty paragraphs
+                    logger.debug(f"Translating elements {i+1}-{batch_end}/{total_elements}...")
 
-        # Translate tables
-        for table_idx, table in enumerate(doc.tables):
-            print(f"Translating table {table_idx+1}/{len(doc.tables)}...")
-            new_table = new_doc.add_table(rows=len(table.rows), cols=len(table.columns))
+                    if self.progress_callback:
+                        progress = 5 + int((i / total_elements) * 90)
+                        self.progress_callback(progress, f"Translating elements {i+1}-{batch_end}/{total_elements}...")
 
-            for row_idx, row in enumerate(table.rows):
-                for col_idx, cell in enumerate(row.cells):
-                    if cell.text.strip():
-                        translated_text = self.translate_text(cell.text, target_language)
-                        new_table.rows[row_idx].cells[col_idx].text = translated_text
-                        # Copy cell formatting
-                        self._copy_cell_format(cell, new_table.rows[row_idx].cells[col_idx])
+                    translations = self.translate_batch(batch_paragraphs, target_language)
+                    translation_iter = iter(translations)
+
+                    # Apply translations in order
+                    for elem_type, elem, text, is_empty in batch_elements:
+                        if is_empty:
+                            new_doc.add_paragraph()
+                        else:
+                            translated_text = next(translation_iter)
+                            new_paragraph = new_doc.add_paragraph()
+                            self._copy_paragraph_format(elem, new_paragraph, translated_text)
+                else:
+                    # Add empty paragraphs
+                    for elem_type, elem, text, is_empty in batch_elements:
+                        new_doc.add_paragraph()
+
+            # Move to next position
+            i = batch_end
+
+            # Now check if there's a table at the current position
+            if i < total_elements and body_elements[i][0] == 'table':
+                table = body_elements[i][1]
+                logger.debug(f"Translating table at position {i+1}/{total_elements}...")
+
+                if self.progress_callback:
+                    progress = 5 + int((i / total_elements) * 90)
+                    self.progress_callback(progress, f"Translating table at position {i+1}/{total_elements}...")
+
+                self._translate_and_add_table(table, new_doc, target_language)
+                i += 1
+
+        if self.progress_callback:
+            self.progress_callback(95, "Saving document...")
 
         new_doc.save(output_path)
-        print(f"Translation complete! Saved to {output_path}")
+        logger.info(f"Translation complete! Saved to {output_path}")
 
     def _copy_document_properties(self, source_doc, target_doc):
         """Copy document-level properties."""
@@ -110,7 +145,7 @@ class DocxTranslator(BaseTranslator):
                 for child in source_numbering_part._element:
                     target_doc.part.numbering_part._element.append(deepcopy(child))
         except Exception as e:
-            print(f"Warning: Could not copy numbering definitions: {e}")
+            logger.warning(f"Could not copy numbering definitions: {e}")
             # Continue without numbering definitions - paragraphs will still work but may have incorrect formatting
 
     def _copy_paragraph_format(self, source_para, target_para, text):
@@ -164,6 +199,107 @@ class DocxTranslator(BaseTranslator):
                 run.font.color.rgb = first_run.font.color.rgb
         else:
             target_para.add_run(text)
+
+    def _translate_and_add_table(self, table, new_doc, target_language):
+        """Translate a table and add it to the new document."""
+        new_table = new_doc.add_table(rows=len(table.rows), cols=len(table.columns))
+
+        # Copy table style
+        if table.style:
+            try:
+                new_table.style = table.style
+            except:
+                pass
+
+        # Collect all non-empty cells for batch translation, avoiding duplicates from merged cells
+        cell_texts = []
+        cell_positions = []  # Store (row_idx, col_idx) for each text
+        seen_cells = set()  # Track cells we've already processed
+
+        for row_idx, row in enumerate(table.rows):
+            for col_idx, cell in enumerate(row.cells):
+                # Skip if we've already processed this cell (it's part of a merge)
+                cell_id = id(cell._element)
+                if cell_id in seen_cells:
+                    continue
+                seen_cells.add(cell_id)
+
+                if cell.text.strip():
+                    cell_texts.append(cell.text)
+                    cell_positions.append((row_idx, col_idx))
+
+        # Batch translate all cells
+        if cell_texts:
+            translated_cells = self.translate_batch(cell_texts, target_language)
+
+            # Apply translations back to cells
+            for (row_idx, col_idx), translated_text in zip(cell_positions, translated_cells):
+                original_cell = table.rows[row_idx].cells[col_idx]
+                new_cell = new_table.rows[row_idx].cells[col_idx]
+
+                # Clear default text first
+                new_cell.text = ""
+
+                # Copy cell properties (borders, shading, etc.)
+                self._copy_cell_properties(original_cell, new_cell)
+
+                # Add translated text with formatting
+                if original_cell.paragraphs:
+                    for para_idx, orig_para in enumerate(original_cell.paragraphs):
+                        if para_idx == 0:
+                            # Use the first paragraph that already exists
+                            target_para = new_cell.paragraphs[0]
+                        else:
+                            # Add additional paragraphs if needed
+                            target_para = new_cell.add_paragraph()
+
+                        # Only add text to the first paragraph (translated text replaces all)
+                        if para_idx == 0:
+                            self._copy_paragraph_format(orig_para, target_para, translated_text)
+                        else:
+                            # Empty paragraphs to maintain structure
+                            target_para.alignment = orig_para.alignment
+
+    def _copy_cell_properties(self, source_cell, target_cell):
+        """Copy cell-level properties including borders, shading, and width."""
+        try:
+            # Copy cell width
+            if source_cell.width:
+                target_cell.width = source_cell.width
+
+            # Copy XML properties (borders, shading, etc.) from the table cell properties element
+            source_tcPr = source_cell._element.tcPr
+            if source_tcPr is not None:
+                # Get or create target cell properties
+                target_tcPr = target_cell._element.get_or_add_tcPr()
+
+                # Copy borders
+                source_borders = source_tcPr.find('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}tcBorders')
+                if source_borders is not None:
+                    existing_borders = target_tcPr.find('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}tcBorders')
+                    if existing_borders is not None:
+                        target_tcPr.remove(existing_borders)
+                    target_tcPr.append(deepcopy(source_borders))
+
+                # Copy shading (background color)
+                source_shading = source_tcPr.find('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}shd')
+                if source_shading is not None:
+                    existing_shading = target_tcPr.find('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}shd')
+                    if existing_shading is not None:
+                        target_tcPr.remove(existing_shading)
+                    target_tcPr.append(deepcopy(source_shading))
+
+                # Copy vertical alignment
+                source_valign = source_tcPr.find('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}vAlign')
+                if source_valign is not None:
+                    existing_valign = target_tcPr.find('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}vAlign')
+                    if existing_valign is not None:
+                        target_tcPr.remove(existing_valign)
+                    target_tcPr.append(deepcopy(source_valign))
+
+        except Exception as e:
+            # If copying properties fails, continue without them
+            logger.warning(f"Could not copy some cell properties: {e}")
 
     def _copy_cell_format(self, source_cell, target_cell):
         """Copy cell formatting."""

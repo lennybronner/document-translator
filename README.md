@@ -1,18 +1,22 @@
 # Document Translator
 
-A web application that translates documents (DOCX, PDF, PPTX) while preserving their formatting using OpenAI GPT-5 Mini.
+A web application that translates documents (DOCX, PDF, PPTX) while preserving their formatting using multiple AI models.
 
 ## Features
 
+- **Multiple AI Models**: Choose from OpenAI GPT-4o Mini, Anthropic Claude Sonnet 4, or local Llama 3 via Ollama
 - **Format Preservation**: Maintains fonts, styles, paragraph formatting, and document structure
+- **Table Support**: Preserves table formatting including borders, cell shading, and merged cells
 - **Context-Aware Translation**: Keeps translation consistent throughout the document by maintaining context
+- **Batch Translation**: Processes multiple paragraphs and table cells together for faster translation
+- **Real-time Progress Tracking**: Visual progress bar shows translation status
 - **Multiple Languages**: Supports translation to/from multiple languages including Spanish, French, German, Chinese, Japanese, and more
 - **Web Interface**: Simple, user-friendly web interface for uploading and downloading documents
-- **Powered by GPT-5 Mini**: Uses OpenAI's GPT-5 Mini for high-quality translations
+- **Privacy Options**: Use local models with Ollama for complete privacy and offline capability
 
 ## Supported Formats
 
-- **DOCX**: Full support with comprehensive formatting preservation
+- **DOCX**: Full support with comprehensive formatting preservation including tables, bullets, numbering, and cell formatting
 - **DOC**: Limited support (converted to DOCX format)
 - **PDF**: Basic support (text extraction only, formatting may be lost)
 - **PPTX**: Basic support (planned feature)
@@ -22,7 +26,10 @@ A web application that translates documents (DOCX, PDF, PPTX) while preserving t
 ### Prerequisites
 
 - Python 3.8 or higher
-- An OpenAI API key ([get one here](https://platform.openai.com/api-keys))
+- At least one of the following:
+  - An OpenAI API key ([get one here](https://platform.openai.com/api-keys))
+  - An Anthropic API key ([get one here](https://console.anthropic.com/))
+  - Ollama installed locally ([setup guide](OLLAMA_SETUP.md))
 
 ### Setup
 
@@ -38,10 +45,22 @@ A web application that translates documents (DOCX, PDF, PPTX) while preserving t
    cp .env.example .env
    ```
 
-4. Add your OpenAI API key to the `.env` file:
+4. Add your API key(s) to the `.env` file:
    ```
-   OPENAI_API_KEY=your_api_key_here
+   # For OpenAI
+   OPENAI_API_KEY=your_openai_api_key_here
+   OPENAI_MODEL=gpt-4o-mini
+
+   # For Anthropic
+   ANTHROPIC_API_KEY=your_anthropic_api_key_here
+   ANTHROPIC_MODEL=claude-sonnet-4-20250514
+
+   # For Ollama (local model)
+   OLLAMA_BASE_URL=http://localhost:11434
+   OLLAMA_MODEL=llama3
    ```
+
+   **Note**: You only need to configure the API key for the model you plan to use.
 
 #### Alternative Setup (without Make)
 
@@ -81,15 +100,35 @@ If you don't have Make installed:
    http://localhost:5000
    ```
 
-3. Upload a document, select the target language, and click "Translate Document"
+3. Choose your translation settings:
+   - **Select Document**: Upload a .docx, .doc, .pdf, or .pptx file
+   - **Target Language**: Choose the language to translate to
+   - **Translation Model**: Select which AI model to use
+     - **OpenAI GPT-4o Mini**: Fast, cost-effective, requires OpenAI API key
+     - **Anthropic Claude Sonnet 4**: High quality, requires Anthropic API key
+     - **Local Llama 3 (Ollama)**: Free, private, offline - requires [Ollama setup](OLLAMA_SETUP.md)
 
-4. Download your translated document when processing is complete
+4. Click "Translate Document" and wait for processing
+
+5. Download your translated document when processing is complete
+
+## Choosing a Translation Model
+
+| Model | Speed | Quality | Cost | Privacy | Notes |
+|-------|-------|---------|------|---------|-------|
+| **OpenAI GPT-4o Mini** | Fast | Excellent | ~$0.15-0.60/1M tokens | Cloud-based | Best overall balance |
+| **Claude Sonnet 4** | Fast | Excellent | ~$3.00/1M tokens | Cloud-based | Best for complex texts |
+| **Llama 3 (Ollama)** | Medium | Very Good | Free | 100% local | Best for privacy/offline |
+
+For getting started, we recommend **OpenAI GPT-4o Mini** for the best balance of speed, quality, and cost.
+
+For complete privacy and offline use, see our [Ollama Setup Guide](OLLAMA_SETUP.md).
 
 ## How It Works
 
 1. **Document Parsing**: The application uses `python-docx` to parse DOCX files and extract text while preserving formatting information (fonts, styles, paragraph formatting, etc.)
 
-2. **Translation**: Text is sent to OpenAI GPT-5 Mini for translation. The translator maintains a context window of recently translated segments to ensure consistency across the document.
+2. **Translation**: Text is sent to your chosen AI model (OpenAI, Anthropic, or Ollama) for translation. The translator maintains a context window of recently translated segments to ensure consistency across the document.
 
 3. **Format Recreation**: The translated text is inserted into a new document with the same formatting as the original (font sizes, styles, colors, alignment, spacing, etc.)
 
@@ -102,10 +141,16 @@ translator-claude/
 ├── Makefile              # Build and run commands
 ├── requirements.txt      # Python dependencies
 ├── .env.example         # Example environment variables
+├── OLLAMA_SETUP.md      # Ollama installation guide
 ├── .gitignore
 ├── src/
 │   ├── app.py           # Flask web application
-│   ├── translator.py    # Core translation logic
+│   ├── translator/
+│   │   ├── __init__.py         # DocumentTranslator factory
+│   │   ├── base.py             # BaseTranslator with multi-model support
+│   │   ├── docx_translator.py  # DOCX translation
+│   │   ├── pdf_translator.py   # PDF translation
+│   │   └── pptx_translator.py  # PPTX translation
 │   ├── templates/
 │   │   └── index.html   # Web interface
 │   └── static/
@@ -119,7 +164,17 @@ translator-claude/
 
 ### Environment Variables
 
-- `OPENAI_API_KEY`: Your OpenAI API key (required)
+**OpenAI Configuration:**
+- `OPENAI_API_KEY`: Your OpenAI API key
+- `OPENAI_MODEL`: Model to use (default: `gpt-4o-mini`)
+
+**Anthropic Configuration:**
+- `ANTHROPIC_API_KEY`: Your Anthropic API key
+- `ANTHROPIC_MODEL`: Model to use (default: `claude-sonnet-4-20250514`)
+
+**Ollama Configuration:**
+- `OLLAMA_BASE_URL`: Ollama server URL (default: `http://localhost:11434`)
+- `OLLAMA_MODEL`: Model to use (default: `llama3`)
 
 ### Flask Configuration
 
@@ -146,10 +201,12 @@ Edit [src/app.py](src/app.py) to modify:
 - Full PDF support with formatting preservation
 - PowerPoint (PPTX) translation support
 - Batch processing for multiple files
-- Progress tracking for long documents
 - Support for more document formats
 - Manual source language selection
 - Translation memory/glossary support
+- Support for text boxes and embedded objects
+- Header/footer translation
+- Table of Contents regeneration
 
 ## Troubleshooting
 
@@ -160,7 +217,9 @@ pip install -r requirements.txt
 ```
 
 ### API key errors
-Verify your `.env` file contains a valid OpenAI API key.
+- For OpenAI: Verify your `.env` file contains a valid `OPENAI_API_KEY`
+- For Anthropic: Verify your `.env` file contains a valid `ANTHROPIC_API_KEY`
+- For Ollama: Ensure Ollama is running (`ollama serve`) and the model is downloaded (`ollama pull llama3`)
 
 ### File upload errors
 Check that the `uploads/` and `downloads/` directories exist and have write permissions. You can create them with:
@@ -189,4 +248,6 @@ MIT License - feel free to use and modify as needed.
 Built with:
 - [Flask](https://flask.palletsprojects.com/) - Web framework
 - [python-docx](https://python-docx.readthedocs.io/) - Document processing
-- [OpenAI GPT-5 Mini](https://openai.com/) - AI translation
+- [OpenAI](https://openai.com/) - GPT-4o Mini AI translation
+- [Anthropic](https://anthropic.com/) - Claude Sonnet 4 AI translation
+- [Ollama](https://ollama.ai/) - Local Llama 3 model support

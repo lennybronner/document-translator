@@ -11,10 +11,19 @@ class PptxTranslator(BaseTranslator):
 
         # Open the presentation
         prs = Presentation(input_path)
+        total_slides = len(prs.slides)
+
+        if self.progress_callback:
+            self.progress_callback(5, "Opening presentation...")
 
         # Process each slide
         for slide_num, slide in enumerate(prs.slides):
-            print(f"Translating slide {slide_num + 1}/{len(prs.slides)}...")
+            print(f"Translating slide {slide_num + 1}/{total_slides}...")
+
+            # Report progress (slides are 5-95% of total progress)
+            if self.progress_callback:
+                progress = 5 + int((slide_num / total_slides) * 90)
+                self.progress_callback(progress, f"Translating slide {slide_num + 1}/{total_slides}...")
 
             # Process all shapes in the slide
             for shape in slide.shapes:
@@ -42,6 +51,9 @@ class PptxTranslator(BaseTranslator):
                                 original_text = cell.text
                                 translated = self.translate_text(original_text, target_language)
                                 cell.text = translated
+
+        if self.progress_callback:
+            self.progress_callback(95, "Saving presentation...")
 
         prs.save(output_path)
         print(f"Translation complete! Saved to {output_path}")

@@ -1,15 +1,74 @@
 from openai import OpenAI
+import anthropic
+import requests
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class BaseTranslator:
     """Base class for document translators with shared translation functionality."""
 
-    def __init__(self, api_key):
-        self.client = OpenAI(api_key=api_key)
+    def __init__(self, model_config, progress_callback=None):
+        """
+        Initialize translator with model configuration.
+
+        model_config should be a dict with:
+        - provider: 'openai', 'anthropic', or 'ollama'
+        - api_key: API key for the provider (not needed for ollama)
+        - model: specific model name (optional, uses defaults)
+        - ollama_base_url: base URL for ollama (default: http://localhost:11434)
+        """
+        self.model_config = model_config
+        self.provider = model_config.get('provider', 'openai')
         self.translation_context = []  # Store previously translated segments for context
+        self.progress_callback = progress_callback
+
+        # Initialize the appropriate client
+        if self.provider == 'openai':
+            self.client = OpenAI(api_key=model_config.get('api_key'))
+            self.model = model_config.get('model', 'gpt-4o-mini')
+        elif self.provider == 'anthropic':
+            self.client = anthropic.Anthropic(api_key=model_config.get('api_key'))
+            self.model = model_config.get('model', 'claude-sonnet-4-20250514')
+        elif self.provider == 'ollama':
+            self.ollama_base_url = model_config.get('ollama_base_url', 'http://localhost:11434')
+            self.model = model_config.get('model', 'llama3')
+        else:
+            raise ValueError(f"Unsupported provider: {self.provider}")
+
+    def _call_llm(self, prompt, max_tokens=4096):
+        """Call the appropriate LLM based on provider."""
+        if self.provider == 'openai':
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                max_completion_tokens=max_tokens
+            )
+            return response.choices[0].message.content.strip()
+
+        elif self.provider == 'anthropic':
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=max_tokens,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return response.content[0].text.strip()
+
+        elif self.provider == 'ollama':
+            response = requests.post(
+                f"{self.ollama_base_url}/api/generate",
+                json={
+                    "model": self.model,
+                    "prompt": prompt,
+                    "stream": False
+                }
+            )
+            response.raise_for_status()
+            return response.json()['response'].strip()
 
     def translate_text(self, text, target_language, use_context=True):
-        """Translate text using OpenAI API with context preservation."""
+        """Translate text using configured LLM with context preservation."""
         if not text.strip():
             return text
 
@@ -27,15 +86,7 @@ Only provide the translation, no explanations.{context_str}
 Text to translate:
 {text}"""
 
-        response = self.client.chat.completions.create(
-            model="gpt-5-mini",
-            messages=[
-                {"role": "user", "content": prompt}
-            ],
-            max_completion_tokens=4096
-        )
-
-        translated = response.choices[0].message.content.strip()
+        translated = self._call_llm(prompt, max_tokens=4096)
 
         # Store in context for consistency
         if use_context:
@@ -67,15 +118,7 @@ Return ONLY the translations in the same numbered format, preserving the paragra
 Paragraphs to translate:
 {numbered_text}"""
 
-        response = self.client.chat.completions.create(
-            model="gpt-5-mini",
-            messages=[
-                {"role": "user", "content": prompt}
-            ],
-            max_completion_tokens=8192
-        )
-
-        translated_text = response.choices[0].message.content.strip()
+        translated_text = self._call_llm(prompt, max_tokens=8192)
 
         # Parse the numbered responses
         translations = []
@@ -98,6 +141,18 @@ Paragraphs to translate:
         # Add the last translation
         if current_translation:
             translations.append(current_translation.strip())
+
+        # Validate that we got the right number of translations
+        if len(translations) != len(paragraphs):
+            logger.warning(f"Batch translation mismatch - Provider: {self.provider}, Model: {self.model}")
+            logger.warning(f"Expected {len(paragraphs)} translations but got {len(translations)}")
+            logger.debug(f"Raw response (first 500 chars): {translated_text[:500]}")
+
+            # Fall back to individual translation if batch failed
+            logger.info("Falling back to individual translation for reliability")
+            translations = []
+            for para in paragraphs:
+                translations.append(self.translate_text(para, target_language, use_context=False))
 
         # Store in context for consistency
         if paragraphs and translations:

@@ -37,6 +37,16 @@
                     </select>
                 </div>
 
+                <div class="form-group">
+                    <label for="model_provider">Translation Model:</label>
+                    <select id="model_provider" name="model_provider" required>
+                        <option value="openai" selected>OpenAI GPT-4o Mini</option>
+                        <option value="anthropic">Anthropic Claude Sonnet 4</option>
+                        <option value="ollama">Local Llama 3 (Ollama)</option>
+                    </select>
+                    <small>Choose the AI model to use for translation</small>
+                </div>
+
                 <button type="submit" class="btn-primary" id="submitBtn">
                     Translate Document
                 </button>
