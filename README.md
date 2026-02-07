@@ -1,10 +1,10 @@
 # Document Translator
 
-A web application that translates documents (DOCX, PDF, PPTX) while preserving their formatting using multiple AI models.
+A web application that translates DOCX documents while preserving their formatting using multiple AI models.
 
 ## Features
 
-- **Multiple AI Models**: Choose from OpenAI GPT-4o Mini, Anthropic Claude Sonnet 4, or local Llama 3 via Ollama
+- **Multiple AI Models**: Choose from OpenAI GPT-4.1 Mini, Anthropic Claude Sonnet 4.5, or local Llama 3 via Ollama
 - **Format Preservation**: Maintains fonts, styles, paragraph formatting, and document structure
 - **Table Support**: Preserves table formatting including borders, cell shading, and merged cells
 - **Context-Aware Translation**: Keeps translation consistent throughout the document by maintaining context
@@ -18,8 +18,6 @@ A web application that translates documents (DOCX, PDF, PPTX) while preserving t
 
 - **DOCX**: Full support with comprehensive formatting preservation including tables, bullets, numbering, and cell formatting
 - **DOC**: Limited support (converted to DOCX format)
-- **PDF**: Basic support (text extraction only, formatting may be lost)
-- **PPTX**: Basic support (planned feature)
 
 ## Installation
 
@@ -49,11 +47,11 @@ A web application that translates documents (DOCX, PDF, PPTX) while preserving t
    ```
    # For OpenAI
    OPENAI_API_KEY=your_openai_api_key_here
-   OPENAI_MODEL=gpt-4o-mini
+   OPENAI_MODEL=gpt-4.1-mini
 
    # For Anthropic
    ANTHROPIC_API_KEY=your_anthropic_api_key_here
-   ANTHROPIC_MODEL=claude-sonnet-4-20250514
+   ANTHROPIC_MODEL=claude-sonnet-4-5-20250929
 
    # For Ollama (local model)
    OLLAMA_BASE_URL=http://localhost:11434
@@ -101,11 +99,11 @@ If you don't have Make installed:
    ```
 
 3. Choose your translation settings:
-   - **Select Document**: Upload a .docx, .doc, .pdf, or .pptx file
+   - **Select Document**: Upload a .docx or .doc file
    - **Target Language**: Choose the language to translate to
    - **Translation Model**: Select which AI model to use
-     - **OpenAI GPT-4o Mini**: Fast, cost-effective, requires OpenAI API key
-     - **Anthropic Claude Sonnet 4**: High quality, requires Anthropic API key
+     - **OpenAI GPT-4.1 Mini**: Fast, cost-effective, requires OpenAI API key
+     - **Anthropic Claude Sonnet 4.5**: High quality, requires Anthropic API key
      - **Local Llama 3 (Ollama)**: Free, private, offline - requires [Ollama setup](OLLAMA_SETUP.md)
 
 4. Click "Translate Document" and wait for processing
@@ -116,11 +114,11 @@ If you don't have Make installed:
 
 | Model | Speed | Quality | Cost | Privacy | Notes |
 |-------|-------|---------|------|---------|-------|
-| **OpenAI GPT-4o Mini** | Fast | Excellent | ~$0.15-0.60/1M tokens | Cloud-based | Best overall balance |
-| **Claude Sonnet 4** | Fast | Excellent | ~$3.00/1M tokens | Cloud-based | Best for complex texts |
+| **OpenAI GPT-4.1 Mini** | Fast | Excellent | ~$0.15-0.60/1M tokens | Cloud-based | Best overall balance |
+| **Claude Sonnet 4.5** | Fast | Excellent | ~$3.00/1M tokens | Cloud-based | Best for complex texts |
 | **Llama 3 (Ollama)** | Medium | Very Good | Free | 100% local | Best for privacy/offline |
 
-For getting started, we recommend **OpenAI GPT-4o Mini** for the best balance of speed, quality, and cost.
+For getting started, we recommend **OpenAI GPT-4.1 Mini** for the best balance of speed, quality, and cost.
 
 For complete privacy and offline use, see our [Ollama Setup Guide](OLLAMA_SETUP.md).
 
@@ -148,9 +146,7 @@ translator-claude/
 │   ├── translator/
 │   │   ├── __init__.py         # DocumentTranslator factory
 │   │   ├── base.py             # BaseTranslator with multi-model support
-│   │   ├── docx_translator.py  # DOCX translation
-│   │   ├── pdf_translator.py   # PDF translation
-│   │   └── pptx_translator.py  # PPTX translation
+│   │   └── docx_translator.py  # DOCX translation
 │   ├── templates/
 │   │   └── index.html   # Web interface
 │   └── static/
@@ -166,11 +162,11 @@ translator-claude/
 
 **OpenAI Configuration:**
 - `OPENAI_API_KEY`: Your OpenAI API key
-- `OPENAI_MODEL`: Model to use (default: `gpt-4o-mini`)
+- `OPENAI_MODEL`: Model to use (default: `gpt-4.1-mini`)
 
 **Anthropic Configuration:**
 - `ANTHROPIC_API_KEY`: Your Anthropic API key
-- `ANTHROPIC_MODEL`: Model to use (default: `claude-sonnet-4-20250514`)
+- `ANTHROPIC_MODEL`: Model to use (default: `claude-sonnet-4-5-20250929`)
 
 **Ollama Configuration:**
 - `OLLAMA_BASE_URL`: Ollama server URL (default: `http://localhost:11434`)
@@ -185,7 +181,6 @@ Edit [src/app.py](src/app.py) to modify:
 
 ## Limitations
 
-- **PDF Support**: PDF translation extracts text only and does not preserve formatting. For best results, use DOCX format.
 - **Unsupported Document Elements**: The following Word document elements are not currently supported:
   - **Text boxes**: Text in text boxes/shapes will not be translated
   - **Table of Contents (TOC)**: TOC fields will not be translated or regenerated. You'll need to manually update the TOC in Word after translation (References → Update Table)
@@ -194,14 +189,12 @@ Edit [src/app.py](src/app.py) to modify:
 - **Inline Formatting**: Bold, italic, and other formatting that changes within a paragraph is not preserved. Each paragraph will have uniform formatting based on its first character.
 - **Complex Formatting**: Some advanced formatting features (custom styles, macros) may not be fully preserved
 - **File Size**: Large documents may take longer to process and may exceed API rate limits
-- **Language Detection**: Source language is auto-detected by GPT-5 Mini; manual specification is not currently supported
+- **Language Detection**: Source language is auto-detected by the AI model; manual specification is not currently supported
 
 ## Future Enhancements
 
-- Full PDF support with formatting preservation
-- PowerPoint (PPTX) translation support
+- PDF and PowerPoint (PPTX) translation support
 - Batch processing for multiple files
-- Support for more document formats
 - Manual source language selection
 - Translation memory/glossary support
 - Support for text boxes and embedded objects
@@ -248,6 +241,6 @@ MIT License - feel free to use and modify as needed.
 Built with:
 - [Flask](https://flask.palletsprojects.com/) - Web framework
 - [python-docx](https://python-docx.readthedocs.io/) - Document processing
-- [OpenAI](https://openai.com/) - GPT-4o Mini AI translation
-- [Anthropic](https://anthropic.com/) - Claude Sonnet 4 AI translation
+- [OpenAI](https://openai.com/) - GPT-4.1 Mini AI translation
+- [Anthropic](https://anthropic.com/) - Claude Sonnet 4.5 AI translation
 - [Ollama](https://ollama.ai/) - Local Llama 3 model support

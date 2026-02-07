@@ -1,7 +1,5 @@
 import os
 from .docx_translator import DocxTranslator
-from .pdf_translator import PdfTranslator
-from .pptx_translator import PptxTranslator
 
 
 class DocumentTranslator:
@@ -16,15 +14,6 @@ class DocumentTranslator:
 
         if file_ext in ['.docx', '.doc']:
             translator = DocxTranslator(self.model_config, progress_callback)
-            translator.translate(input_path, output_path, target_language)
-        elif file_ext == '.pdf':
-            # PDF output will be DOCX format
-            if not output_path.endswith('.docx'):
-                output_path = os.path.splitext(output_path)[0] + '.docx'
-            translator = PdfTranslator(self.model_config, progress_callback)
-            translator.translate(input_path, output_path, target_language)
-        elif file_ext == '.pptx':
-            translator = PptxTranslator(self.model_config, progress_callback)
             translator.translate(input_path, output_path, target_language)
         else:
             raise ValueError(f"Unsupported file format: {file_ext}")

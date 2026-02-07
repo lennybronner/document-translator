@@ -72,10 +72,7 @@ document.getElementById('translateForm').addEventListener('submit', async (e) =>
                     progressDiv.classList.add('hidden');
                     submitBtn.disabled = false;
                     submitBtn.textContent = 'Translate Document';
-                    showStatus(
-                        `Translation complete! <a href="${progressData.download_url}">Download translated document</a>`,
-                        'success'
-                    );
+                    showStatusWithLink('Translation complete! ', 'Download translated document', progressData.download_url, 'success');
                     fileInput.value = ''; // Clear file input
                 } else if (progressData.status === 'error') {
                     clearInterval(pollInterval);
@@ -103,7 +100,19 @@ document.getElementById('translateForm').addEventListener('submit', async (e) =>
 
 function showStatus(message, type) {
     const statusDiv = document.getElementById('status');
-    statusDiv.innerHTML = message;
+    statusDiv.textContent = message;
+    statusDiv.className = `status ${type}`;
+    statusDiv.classList.remove('hidden');
+}
+
+function showStatusWithLink(message, linkText, linkUrl, type) {
+    const statusDiv = document.getElementById('status');
+    statusDiv.textContent = '';
+    statusDiv.appendChild(document.createTextNode(message));
+    const a = document.createElement('a');
+    a.textContent = linkText;
+    a.href = linkUrl;
+    statusDiv.appendChild(a);
     statusDiv.className = `status ${type}`;
     statusDiv.classList.remove('hidden');
 }

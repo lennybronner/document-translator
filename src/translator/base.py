@@ -1,3 +1,5 @@
+import re
+
 from openai import OpenAI
 import anthropic
 import requests
@@ -27,10 +29,10 @@ class BaseTranslator:
         # Initialize the appropriate client
         if self.provider == 'openai':
             self.client = OpenAI(api_key=model_config.get('api_key'))
-            self.model = model_config.get('model', 'gpt-4o-mini')
+            self.model = model_config.get('model', 'gpt-4.1-mini')
         elif self.provider == 'anthropic':
             self.client = anthropic.Anthropic(api_key=model_config.get('api_key'))
-            self.model = model_config.get('model', 'claude-sonnet-4-20250514')
+            self.model = model_config.get('model', 'claude-sonnet-4-5-20250929')
         elif self.provider == 'ollama':
             self.ollama_base_url = model_config.get('ollama_base_url', 'http://localhost:11434')
             self.model = model_config.get('model', 'llama3')
@@ -120,27 +122,39 @@ Paragraphs to translate:
 
         translated_text = self._call_llm(prompt, max_tokens=8192)
 
-        # Parse the numbered responses
+        # Parse the numbered responses more robustly
         translations = []
-        lines = translated_text.split('\n')
-        current_translation = ""
 
-        for line in lines:
-            # Check if line starts with a paragraph number
-            if line.strip().startswith('[') and ']' in line:
-                # Save previous translation if exists
-                if current_translation:
-                    translations.append(current_translation.strip())
-                # Start new translation (remove the number)
-                current_translation = line.split(']', 1)[1].strip() if ']' in line else ""
-            else:
-                # Continue current translation
-                if current_translation or line.strip():
-                    current_translation += " " + line.strip() if current_translation else line.strip()
+        # Try to extract numbered items using regex for better accuracy
+        pattern = r'\[(\d+)\]\s*(.+?)(?=\[\d+\]|$)'
+        matches = re.findall(pattern, translated_text, re.DOTALL)
 
-        # Add the last translation
-        if current_translation:
-            translations.append(current_translation.strip())
+        if matches and len(matches) == len(paragraphs):
+            # Successfully parsed with regex
+            for num, text in matches:
+                translations.append(text.strip())
+        else:
+            # Fall back to line-by-line parsing
+            logger.debug(f"Regex parsing found {len(matches) if matches else 0} items, expected {len(paragraphs)}, falling back to line parser")
+            lines = translated_text.split('\n')
+            current_translation = ""
+
+            for line in lines:
+                # Check if line starts with a paragraph number
+                if line.strip().startswith('[') and ']' in line:
+                    # Save previous translation if exists and not empty
+                    if current_translation.strip():
+                        translations.append(current_translation.strip())
+                    # Start new translation (remove the number)
+                    current_translation = line.split(']', 1)[1].strip() if ']' in line else ""
+                else:
+                    # Continue current translation
+                    if line.strip():
+                        current_translation += " " + line.strip() if current_translation else line.strip()
+
+            # Add the last translation if not empty
+            if current_translation.strip():
+                translations.append(current_translation.strip())
 
         # Validate that we got the right number of translations
         if len(translations) != len(paragraphs):

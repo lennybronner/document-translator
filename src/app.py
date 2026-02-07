@@ -19,19 +19,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['DOWNLOAD_FOLDER'] = 'downloads'
+app.config['UPLOAD_FOLDER'] = os.path.join(BASE_DIR, 'uploads')
+app.config['DOWNLOAD_FOLDER'] = os.path.join(BASE_DIR, 'downloads')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
 # Create folders if they don't exist
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['DOWNLOAD_FOLDER'], exist_ok=True)
 
-ALLOWED_EXTENSIONS = {'docx', 'doc', 'pdf', 'pptx'}
+ALLOWED_EXTENSIONS = {'docx', 'doc'}
 
 # Store translation job progress
 translation_jobs = {}
+jobs_lock = threading.Lock()
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -44,18 +47,19 @@ def translate_in_background(job_id, input_path, output_path, target_language, mo
     """Background translation function."""
     try:
         def progress_callback(percent, message):
-            translation_jobs[job_id]['progress'] = percent
-            translation_jobs[job_id]['message'] = message
+            with jobs_lock:
+                translation_jobs[job_id]['progress'] = percent
+                translation_jobs[job_id]['message'] = message
 
         # Build model configuration based on provider
         model_config = {'provider': model_provider}
 
         if model_provider == 'openai':
             model_config['api_key'] = os.getenv('OPENAI_API_KEY')
-            model_config['model'] = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
+            model_config['model'] = os.getenv('OPENAI_MODEL', 'gpt-4.1-mini')
         elif model_provider == 'anthropic':
             model_config['api_key'] = os.getenv('ANTHROPIC_API_KEY')
-            model_config['model'] = os.getenv('ANTHROPIC_MODEL', 'claude-sonnet-4-20250514')
+            model_config['model'] = os.getenv('ANTHROPIC_MODEL', 'claude-sonnet-4-5-20250929')
         elif model_provider == 'ollama':
             model_config['ollama_base_url'] = os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434')
             model_config['model'] = os.getenv('OLLAMA_MODEL', 'llama3')
@@ -66,14 +70,16 @@ def translate_in_background(job_id, input_path, output_path, target_language, mo
         # Clean up input file
         os.remove(input_path)
 
-        translation_jobs[job_id]['progress'] = 100
-        translation_jobs[job_id]['status'] = 'completed'
-        translation_jobs[job_id]['message'] = 'Translation complete!'
+        with jobs_lock:
+            translation_jobs[job_id]['progress'] = 100
+            translation_jobs[job_id]['status'] = 'completed'
+            translation_jobs[job_id]['message'] = 'Translation complete!'
 
     except Exception as e:
-        translation_jobs[job_id]['status'] = 'error'
-        translation_jobs[job_id]['error'] = str(e)
-        translation_jobs[job_id]['message'] = f'Error: {str(e)}'
+        with jobs_lock:
+            translation_jobs[job_id]['status'] = 'error'
+            translation_jobs[job_id]['error'] = str(e)
+            translation_jobs[job_id]['message'] = f'Error: {str(e)}'
 
 
 @app.route('/translate', methods=['POST'])
@@ -89,7 +95,7 @@ def translate():
         return jsonify({'error': 'No file selected'}), 400
 
     if not allowed_file(file.filename):
-        return jsonify({'error': 'File type not supported. Supported types: .docx, .doc, .pdf, .pptx'}), 400
+        return jsonify({'error': 'File type not supported. Supported types: .docx, .doc'}), 400
 
     try:
         # Save uploaded file
@@ -102,12 +108,13 @@ def translate():
         output_path = os.path.join(app.config['DOWNLOAD_FOLDER'], output_filename)
 
         # Initialize job tracking
-        translation_jobs[job_id] = {
-            'status': 'processing',
-            'progress': 0,
-            'message': 'Starting translation...',
-            'output_filename': output_filename
-        }
+        with jobs_lock:
+            translation_jobs[job_id] = {
+                'status': 'processing',
+                'progress': 0,
+                'message': 'Starting translation...',
+                'output_filename': output_filename
+            }
 
         # Start translation in background thread
         thread = threading.Thread(
@@ -128,30 +135,54 @@ def translate():
 @app.route('/progress/<job_id>')
 def get_progress(job_id):
     """Get the progress of a translation job."""
-    if job_id not in translation_jobs:
-        return jsonify({'error': 'Job not found'}), 404
+    with jobs_lock:
+        if job_id not in translation_jobs:
+            return jsonify({'error': 'Job not found'}), 404
 
-    job = translation_jobs[job_id]
-    response = {
-        'status': job['status'],
-        'progress': job['progress'],
-        'message': job.get('message', '')
-    }
+        job = translation_jobs[job_id]
+        response = {
+            'status': job['status'],
+            'progress': job['progress'],
+            'message': job.get('message', '')
+        }
 
-    if job['status'] == 'completed':
-        response['download_url'] = f"/download/{job['output_filename']}"
-    elif job['status'] == 'error':
-        response['error'] = job.get('error', 'Unknown error')
+        if job['status'] == 'completed':
+            response['download_url'] = f"/download/{job['output_filename']}"
+        elif job['status'] == 'error':
+            response['error'] = job.get('error', 'Unknown error')
 
     return jsonify(response)
 
 @app.route('/download/<filename>')
 def download(filename):
     # Use absolute path for downloads
-    file_path = os.path.abspath(os.path.join(app.config['DOWNLOAD_FOLDER'], filename))
+    download_dir = os.path.abspath(app.config['DOWNLOAD_FOLDER'])
+    file_path = os.path.abspath(os.path.join(download_dir, filename))
+    # Prevent path traversal (e.g. ../../etc/passwd)
+    if not file_path.startswith(download_dir + os.sep):
+        return jsonify({'error': 'Invalid filename'}), 403
     if not os.path.exists(file_path):
         return jsonify({'error': 'File not found'}), 404
-    return send_file(file_path, as_attachment=True)
+
+    response = send_file(file_path, as_attachment=True)
+
+    # Clean up: delete the file and remove the job entry after serving
+    @response.call_on_close
+    def cleanup():
+        try:
+            os.remove(file_path)
+        except OSError:
+            pass
+        # Remove the job entry that references this file
+        with jobs_lock:
+            job_ids_to_remove = [
+                jid for jid, job in translation_jobs.items()
+                if job.get('output_filename') == filename
+            ]
+            for jid in job_ids_to_remove:
+                del translation_jobs[jid]
+
+    return response
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
