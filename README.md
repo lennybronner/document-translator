@@ -186,7 +186,7 @@ Edit [src/app.py](src/app.py) to modify:
   - **Table of Contents (TOC)**: TOC fields will not be translated or regenerated. You'll need to manually update the TOC in Word after translation (References → Update Table)
   - **Headers/Footers**: May not be fully preserved
   - **Embedded objects**: Charts, images with captions, SmartArt, etc. may not be handled correctly
-- **Inline Formatting**: Bold, italic, and other formatting that changes within a paragraph is not preserved. Each paragraph will have uniform formatting based on its first character.
+- **Inline Formatting**: Bold, italic, and underline within paragraphs are preserved on a best-effort basis. Other mid-paragraph formatting changes (font size, color) are not preserved.
 - **Complex Formatting**: Some advanced formatting features (custom styles, macros) may not be fully preserved
 - **File Size**: Large documents may take longer to process and may exceed API rate limits
 - **Language Detection**: Source language is auto-detected by the AI model; manual specification is not currently supported

@@ -1,3 +1,5 @@
+import re
+
 from docx import Document
 from docx.shared import Pt, RGBColor
 from docx.table import Table as DocxTable
@@ -56,12 +58,12 @@ class DocxTranslator(BaseTranslator):
                 elem_type, elem = body_elements[j]
 
                 if elem_type == 'paragraph':
-                    text = elem.text
-                    if text.strip():
-                        batch_paragraphs.append(text)
-                        batch_elements.append(('paragraph', elem, text, False))
+                    tagged_text, has_tags = self._runs_to_tagged_text(elem)
+                    if tagged_text.strip():
+                        batch_paragraphs.append(tagged_text)
+                        batch_elements.append(('paragraph', elem, tagged_text, False, has_tags))
                     else:
-                        batch_elements.append(('paragraph', elem, "", True))
+                        batch_elements.append(('paragraph', elem, "", True, False))
                 elif elem_type == 'table':
                     # Stop batching when we hit a table
                     batch_end = j
@@ -80,16 +82,19 @@ class DocxTranslator(BaseTranslator):
                     translation_iter = iter(translations)
 
                     # Apply translations in order
-                    for elem_type, elem, text, is_empty in batch_elements:
+                    for elem_type, elem, text, is_empty, has_tags in batch_elements:
                         if is_empty:
                             new_doc.add_paragraph()
                         else:
                             translated_text = next(translation_iter)
                             new_paragraph = new_doc.add_paragraph()
-                            self._copy_paragraph_format(elem, new_paragraph, translated_text)
+                            if has_tags:
+                                self._apply_paragraph_with_tags(elem, new_paragraph, translated_text)
+                            else:
+                                self._copy_paragraph_format(elem, new_paragraph, translated_text)
                 else:
                     # Add empty paragraphs
-                    for elem_type, elem, text, is_empty in batch_elements:
+                    for elem_type, elem, text, is_empty, has_tags in batch_elements:
                         new_doc.add_paragraph()
 
             # Move to next position
@@ -146,16 +151,14 @@ class DocxTranslator(BaseTranslator):
             logger.warning(f"Could not copy numbering definitions: {e}")
             # Continue without numbering definitions - paragraphs will still work but may have incorrect formatting
 
-    def _copy_paragraph_format(self, source_para, target_para, text):
-        """Copy paragraph formatting including runs (individual text formatting)."""
-        # Copy style first (this includes list formatting)
+    def _copy_paragraph_properties(self, source_para, target_para):
+        """Copy paragraph-level formatting (style, alignment, spacing, numbering)."""
         if source_para.style:
             try:
                 target_para.style = source_para.style.name
             except (KeyError, ValueError):
-                pass  # Style might not exist in new doc
+                pass
 
-        # Copy paragraph-level formatting
         target_para.alignment = source_para.alignment
         target_para.paragraph_format.left_indent = source_para.paragraph_format.left_indent
         target_para.paragraph_format.right_indent = source_para.paragraph_format.right_indent
@@ -164,39 +167,122 @@ class DocxTranslator(BaseTranslator):
         target_para.paragraph_format.space_after = source_para.paragraph_format.space_after
         target_para.paragraph_format.line_spacing = source_para.paragraph_format.line_spacing
 
-        # Copy list/bullet formatting by copying the numbering properties
         source_pPr = source_para._element.pPr
         if source_pPr is not None:
             source_numPr = source_pPr.find(f'.//{WML_NS}numPr')
             if source_numPr is not None:
-                # Get or create paragraph properties in target
                 target_pPr = target_para._element.get_or_add_pPr()
-                # Remove existing numPr if any
                 existing_numPr = target_pPr.find(f'.//{WML_NS}numPr')
                 if existing_numPr is not None:
                     target_pPr.remove(existing_numPr)
-                # Copy the numbering properties
                 target_pPr.append(deepcopy(source_numPr))
 
-        # Apply uniform formatting from the first run
-        # (inline formatting like bold/italic within paragraphs is not preserved)
+    def _strip_formatting_tags(self, text):
+        """Remove any <b>, <i>, <u> tags that the LLM may have added unexpectedly."""
+        return re.sub(r'</?[biu]>', '', text)
+
+    def _copy_font_properties(self, source_run, target_run):
+        """Copy font properties (size, name, color) from source run to target run."""
+        if source_run.font.size:
+            target_run.font.size = source_run.font.size
+        if source_run.font.name:
+            target_run.font.name = source_run.font.name
+        if source_run.font.color.rgb:
+            target_run.font.color.rgb = source_run.font.color.rgb
+
+    def _copy_paragraph_format(self, source_para, target_para, text):
+        """Copy paragraph formatting and add text as a single uniformly-formatted run."""
+        self._copy_paragraph_properties(source_para, target_para)
+        text = self._strip_formatting_tags(text)
+
         if source_para.runs:
             first_run = source_para.runs[0]
             run = target_para.add_run(text)
-
-            # Copy run formatting from first run
             run.bold = first_run.bold
             run.italic = first_run.italic
             run.underline = first_run.underline
-
-            if first_run.font.size:
-                run.font.size = first_run.font.size
-            if first_run.font.name:
-                run.font.name = first_run.font.name
-            if first_run.font.color.rgb:
-                run.font.color.rgb = first_run.font.color.rgb
+            self._copy_font_properties(first_run, run)
         else:
             target_para.add_run(text)
+
+    def _runs_to_tagged_text(self, paragraph):
+        """Convert paragraph runs to tagged text preserving inline formatting.
+
+        Returns (text, has_tags). When all runs share the same formatting,
+        returns plain text with has_tags=False.
+        """
+        runs = [r for r in paragraph.runs if r.text]
+        if not runs:
+            return paragraph.text, False
+
+        # Merge consecutive runs with identical bold/italic/underline
+        merged = []
+        for run in runs:
+            fmt = (bool(run.bold), bool(run.italic), bool(run.underline))
+            if merged and merged[-1][0] == fmt:
+                merged[-1] = (fmt, merged[-1][1] + run.text)
+            else:
+                merged.append((fmt, run.text))
+
+        # If uniform formatting across all runs, no tags needed
+        if len(set(m[0] for m in merged)) <= 1:
+            return paragraph.text, False
+
+        # Build tagged string
+        tagged = ""
+        for (bold, italic, underline), text in merged:
+            segment = text
+            if underline:
+                segment = f"<u>{segment}</u>"
+            if italic:
+                segment = f"<i>{segment}</i>"
+            if bold:
+                segment = f"<b>{segment}</b>"
+            tagged += segment
+
+        return tagged, True
+
+    def _parse_tagged_text(self, tagged_text):
+        """Parse tagged text into list of (text, bold, italic, underline) tuples."""
+        segments = []
+        bold = italic = underline = False
+
+        for part in re.split(r'(</?[biu]>)', tagged_text):
+            if part == '<b>':
+                bold = True
+            elif part == '</b>':
+                bold = False
+            elif part == '<i>':
+                italic = True
+            elif part == '</i>':
+                italic = False
+            elif part == '<u>':
+                underline = True
+            elif part == '</u>':
+                underline = False
+            elif part:
+                segments.append((part, bold, italic, underline))
+
+        return segments
+
+    def _apply_paragraph_with_tags(self, source_para, target_para, translated_text):
+        """Apply translated tagged text to paragraph, creating runs per format segment."""
+        self._copy_paragraph_properties(source_para, target_para)
+
+        segments = self._parse_tagged_text(translated_text)
+        if not segments:
+            target_para.add_run(translated_text)
+            return
+
+        base_run = source_para.runs[0] if source_para.runs else None
+
+        for text, bold, italic, underline in segments:
+            run = target_para.add_run(text)
+            run.bold = True if bold else None
+            run.italic = True if italic else None
+            run.underline = True if underline else None
+            if base_run:
+                self._copy_font_properties(base_run, run)
 
     def _translate_and_add_table(self, table, new_doc, target_language):
         """Translate a table and add it to the new document.
@@ -219,7 +305,7 @@ class DocxTranslator(BaseTranslator):
 
         # Collect unique non-empty cells for translation
         cell_texts = []
-        cells_to_update = []
+        cells_to_update = []  # (cell, has_tags, source_para)
         seen_cells = set()
 
         for row in new_table.rows:
@@ -230,8 +316,15 @@ class DocxTranslator(BaseTranslator):
                 seen_cells.add(cell_id)
 
                 if cell.text.strip():
-                    cell_texts.append(cell.text)
-                    cells_to_update.append(cell)
+                    # Use tagged text for cells with a single text paragraph
+                    text_paras = [p for p in cell.paragraphs if p.text.strip()]
+                    if len(text_paras) == 1:
+                        tagged_text, has_tags = self._runs_to_tagged_text(text_paras[0])
+                        cell_texts.append(tagged_text if has_tags else cell.text)
+                        cells_to_update.append((cell, has_tags, text_paras[0]))
+                    else:
+                        cell_texts.append(cell.text)
+                        cells_to_update.append((cell, False, None))
 
         # Translate in chunks to avoid overwhelming the LLM on large tables
         CELL_BATCH_SIZE = 15
@@ -241,14 +334,44 @@ class DocxTranslator(BaseTranslator):
             all_translated.extend(self.translate_batch(chunk, target_language))
 
         # Replace text in-place, preserving run formatting
-        for cell, translated_text in zip(cells_to_update, all_translated):
-            # Clear all existing run text
-            for para in cell.paragraphs:
-                for run in para.runs:
-                    run.text = ""
-            # Put translated text in first paragraph
-            if cell.paragraphs:
-                if cell.paragraphs[0].runs:
-                    cell.paragraphs[0].runs[0].text = translated_text
+        for (cell, has_tags, source_para), translated_text in zip(cells_to_update, all_translated):
+            if has_tags and source_para:
+                # Save base run reference for font properties before modifying
+                base_run = source_para.runs[0] if source_para.runs else None
+                # Clear all runs across all paragraphs
+                for para in cell.paragraphs:
+                    for run in para.runs:
+                        run.text = ""
+                # Parse tags and create new runs in first paragraph
+                segments = self._parse_tagged_text(translated_text)
+                if segments and cell.paragraphs:
+                    first_para = cell.paragraphs[0]
+                    # Remove existing empty runs
+                    for r_elem in first_para._element.findall(f'{WML_NS}r'):
+                        first_para._element.remove(r_elem)
+                    for text, bold, italic, underline in segments:
+                        run = first_para.add_run(text)
+                        run.bold = True if bold else None
+                        run.italic = True if italic else None
+                        run.underline = True if underline else None
+                        if base_run:
+                            self._copy_font_properties(base_run, run)
                 else:
-                    cell.paragraphs[0].add_run(translated_text)
+                    # Fallback: strip tags and put plain text
+                    translated_text = self._strip_formatting_tags(translated_text)
+                    if cell.paragraphs and cell.paragraphs[0].runs:
+                        cell.paragraphs[0].runs[0].text = translated_text
+                    elif cell.paragraphs:
+                        cell.paragraphs[0].add_run(translated_text)
+            else:
+                translated_text = self._strip_formatting_tags(translated_text)
+                # Clear all existing run text
+                for para in cell.paragraphs:
+                    for run in para.runs:
+                        run.text = ""
+                # Put translated text in first paragraph
+                if cell.paragraphs:
+                    if cell.paragraphs[0].runs:
+                        cell.paragraphs[0].runs[0].text = translated_text
+                    else:
+                        cell.paragraphs[0].add_run(translated_text)

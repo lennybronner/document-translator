@@ -83,6 +83,7 @@ class BaseTranslator:
 
         prompt = f"""Translate the following text to {target_language}.
 Maintain the same tone, style, and any technical terms appropriately.
+If the text contains HTML formatting tags (<b>, <i>, <u>), preserve them in your translation around the equivalent translated words.
 Only provide the translation, no explanations.{context_str}
 
 Text to translate:
@@ -115,6 +116,7 @@ Text to translate:
 
         prompt = f"""Translate the following paragraphs to {target_language}.
 Maintain the same tone, style, and any technical terms appropriately.
+If the text contains HTML formatting tags (<b>, <i>, <u>), preserve them in your translation around the equivalent translated words.
 Return ONLY the translations in the same numbered format, preserving the paragraph numbers.{context_str}
 
 Paragraphs to translate:
