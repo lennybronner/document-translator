@@ -178,8 +178,14 @@ class DocxTranslator(BaseTranslator):
                 target_pPr.append(deepcopy(source_numPr))
 
     def _strip_formatting_tags(self, text):
-        """Remove any <b>, <i>, <u> tags that the LLM may have added unexpectedly."""
-        return re.sub(r'</?[biu]>', '', text)
+        """Remove any <b>, <i>, <u> tags (including malformed variants) that the LLM may have added."""
+        # Well-formed tags: <b>, </b>, <i>, </i>, <u>, </u>
+        text = re.sub(r'</?[biu]>', '', text)
+        # Malformed tags from weaker models: <b=..., <i ..., </b=...>, etc.
+        text = re.sub(r'</?[biu][^a-zA-Z>][^>]*>', '', text)
+        # Unclosed malformed tags at end of text: <b=something (no closing >)
+        text = re.sub(r'</?[biu][^a-zA-Z>][^>]*$', '', text)
+        return text
 
     def _copy_font_properties(self, source_run, target_run):
         """Copy font properties (size, name, color) from source run to target run."""
@@ -270,8 +276,11 @@ class DocxTranslator(BaseTranslator):
         self._copy_paragraph_properties(source_para, target_para)
 
         segments = self._parse_tagged_text(translated_text)
-        if not segments:
-            target_para.add_run(translated_text)
+
+        # If parsing failed or leftover '<' in segments means malformed tags — fall back to plain text
+        if not segments or any('<' in text for text, *_ in segments):
+            cleaned = self._strip_formatting_tags(translated_text)
+            self._copy_paragraph_format(source_para, target_para, cleaned)
             return
 
         base_run = source_para.runs[0] if source_para.runs else None
@@ -344,7 +353,9 @@ class DocxTranslator(BaseTranslator):
                         run.text = ""
                 # Parse tags and create new runs in first paragraph
                 segments = self._parse_tagged_text(translated_text)
-                if segments and cell.paragraphs:
+                # Check for malformed tags: leftover '<' means the model corrupted the tags
+                has_malformed = not segments or any('<' in text for text, *_ in segments)
+                if not has_malformed and cell.paragraphs:
                     first_para = cell.paragraphs[0]
                     # Remove existing empty runs
                     for r_elem in first_para._element.findall(f'{WML_NS}r'):

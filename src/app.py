@@ -62,7 +62,7 @@ def translate_in_background(job_id, input_path, output_path, target_language, mo
             model_config['model'] = os.getenv('ANTHROPIC_MODEL', 'claude-sonnet-4-5-20250929')
         elif model_provider == 'ollama':
             model_config['ollama_base_url'] = os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434')
-            model_config['model'] = os.getenv('OLLAMA_MODEL', 'llama3')
+            model_config['model'] = os.getenv('OLLAMA_MODEL', 'qwen2.5:7b')
 
         translator = DocumentTranslator(model_config)
         translator.translate_document(input_path, output_path, target_language, progress_callback)

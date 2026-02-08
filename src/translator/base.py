@@ -35,7 +35,7 @@ class BaseTranslator:
             self.model = model_config.get('model', 'claude-sonnet-4-5-20250929')
         elif self.provider == 'ollama':
             self.ollama_base_url = model_config.get('ollama_base_url', 'http://localhost:11434')
-            self.model = model_config.get('model', 'llama3')
+            self.model = model_config.get('model', 'qwen2.5:7b')
         else:
             raise ValueError(f"Unsupported provider: {self.provider}")
 
@@ -83,7 +83,7 @@ class BaseTranslator:
 
         prompt = f"""Translate the following text to {target_language}.
 Maintain the same tone, style, and any technical terms appropriately.
-If the text contains HTML formatting tags (<b>, <i>, <u>), preserve them in your translation around the equivalent translated words.
+If the text contains HTML formatting tags (<b>, <i>, <u>), preserve them in your translation around the equivalent translated words. Never split a word across a tag boundary — always place opening and closing tags at word boundaries.
 Only provide the translation, no explanations.{context_str}
 
 Text to translate:
@@ -116,7 +116,7 @@ Text to translate:
 
         prompt = f"""Translate the following paragraphs to {target_language}.
 Maintain the same tone, style, and any technical terms appropriately.
-If the text contains HTML formatting tags (<b>, <i>, <u>), preserve them in your translation around the equivalent translated words.
+If the text contains HTML formatting tags (<b>, <i>, <u>), preserve them in your translation around the equivalent translated words. Never split a word across a tag boundary — always place opening and closing tags at word boundaries.
 Return ONLY the translations in the same numbered format, preserving the paragraph numbers.{context_str}
 
 Paragraphs to translate:

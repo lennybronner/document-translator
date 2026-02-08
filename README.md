@@ -4,7 +4,7 @@ A web application that translates DOCX documents while preserving their formatti
 
 ## Features
 
-- **Multiple AI Models**: Choose from OpenAI GPT-4.1 Mini, Anthropic Claude Sonnet 4.5, or local Llama 3 via Ollama
+- **Multiple AI Models**: Choose from OpenAI GPT-4.1 Mini, Anthropic Claude Sonnet 4.5, or local Qwen 2.5 via Ollama
 - **Format Preservation**: Maintains fonts, styles, paragraph formatting, and document structure
 - **Table Support**: Preserves table formatting including borders, cell shading, and merged cells
 - **Context-Aware Translation**: Keeps translation consistent throughout the document by maintaining context
@@ -55,7 +55,7 @@ A web application that translates DOCX documents while preserving their formatti
 
    # For Ollama (local model)
    OLLAMA_BASE_URL=http://localhost:11434
-   OLLAMA_MODEL=llama3
+   OLLAMA_MODEL=qwen2.5:7b
    ```
 
    **Note**: You only need to configure the API key for the model you plan to use.
@@ -104,7 +104,7 @@ If you don't have Make installed:
    - **Translation Model**: Select which AI model to use
      - **OpenAI GPT-4.1 Mini**: Fast, cost-effective, requires OpenAI API key
      - **Anthropic Claude Sonnet 4.5**: High quality, requires Anthropic API key
-     - **Local Llama 3 (Ollama)**: Free, private, offline - requires [Ollama setup](OLLAMA_SETUP.md)
+     - **Local Qwen 2.5 (Ollama)**: Free, private, offline - requires [Ollama setup](OLLAMA_SETUP.md)
 
 4. Click "Translate Document" and wait for processing
 
@@ -116,7 +116,7 @@ If you don't have Make installed:
 |-------|-------|---------|------|---------|-------|
 | **OpenAI GPT-4.1 Mini** | Fast | Excellent | ~$0.15-0.60/1M tokens | Cloud-based | Best overall balance |
 | **Claude Sonnet 4.5** | Fast | Excellent | ~$3.00/1M tokens | Cloud-based | Best for complex texts |
-| **Llama 3 (Ollama)** | Medium | Very Good | Free | 100% local | Best for privacy/offline |
+| **Qwen 2.5 7B (Ollama)** | Medium | Very Good | Free | 100% local | Best for privacy/offline |
 
 For getting started, we recommend **OpenAI GPT-4.1 Mini** for the best balance of speed, quality, and cost.
 
@@ -170,7 +170,7 @@ translator-claude/
 
 **Ollama Configuration:**
 - `OLLAMA_BASE_URL`: Ollama server URL (default: `http://localhost:11434`)
-- `OLLAMA_MODEL`: Model to use (default: `llama3`)
+- `OLLAMA_MODEL`: Model to use (default: `qwen2.5:7b`)
 
 ### Flask Configuration
 
@@ -212,7 +212,7 @@ pip install -r requirements.txt
 ### API key errors
 - For OpenAI: Verify your `.env` file contains a valid `OPENAI_API_KEY`
 - For Anthropic: Verify your `.env` file contains a valid `ANTHROPIC_API_KEY`
-- For Ollama: Ensure Ollama is running (`ollama serve`) and the model is downloaded (`ollama pull llama3`)
+- For Ollama: Ensure Ollama is running (`ollama serve`) and the model is downloaded (`ollama pull qwen2.5:7b`)
 
 ### File upload errors
 Check that the `uploads/` and `downloads/` directories exist and have write permissions. You can create them with:
@@ -243,4 +243,4 @@ Built with:
 - [python-docx](https://python-docx.readthedocs.io/) - Document processing
 - [OpenAI](https://openai.com/) - GPT-4.1 Mini AI translation
 - [Anthropic](https://anthropic.com/) - Claude Sonnet 4.5 AI translation
-- [Ollama](https://ollama.ai/) - Local Llama 3 model support
+- [Ollama](https://ollama.ai/) - Local Qwen 2.5 model support
